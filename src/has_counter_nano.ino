@@ -2,6 +2,7 @@
 #include <LiquidCrystal_I2C.h>
 #include <rdm6300.h>
 #include "RTClib.h"
+#include <EEPROM.h>
 
 #define RDM6300_RX_PIN 9
 #define READ_LED_PIN 13
@@ -20,6 +21,7 @@ RTC_DS3231 rtc;
 struct Tag{
   String card;
   String prevCard;
+  String nama;
   bool change = false;
   bool tap = false;
 }tag;
@@ -30,7 +32,7 @@ struct Time{
 }waktu;
 
 struct Barang{
-  unsigned int total = 20;
+  unsigned int total = 0;
   unsigned int terhitung = 0;
   unsigned long prevStamp;
   unsigned long currentStamp;
@@ -38,6 +40,19 @@ struct Barang{
   bool adjustState = false;
   bool resetState = false;
 }barang;
+
+struct Comm{
+  String data[2];
+  String cmdToEsp;
+  byte jumlahData = 0;
+}comm;
+
+struct States{
+  bool holdState = false;
+  bool setupState = false;
+  bool stopState = false;
+}bs;
+uint8_t blank[] = { 0x00, 0x00, 0x00, 0x00 };
 
 const uint8_t SEG_DONE[] = {
 	SEG_B | SEG_C | SEG_D | SEG_E | SEG_G,           // d
@@ -49,10 +64,12 @@ const uint8_t SEG_DONE[] = {
 bool countState = false;
 bool countPrevState = false;
 bool stateCounter = false;
+bool first = true;
 
 void initialize();
 void waitForWiFi();
 void readUART();
+void parsing(String data);
 void showMenu(byte jam, byte menit, byte detik);
 unsigned int calculateCycle();
 unsigned int calculateMillisRTC(byte detik);
@@ -82,6 +99,7 @@ void setup(){
 	digitalWrite(READ_LED_PIN, LOW);
 	rdm6300.begin(RDM6300_RX_PIN);
   waitForWiFi();
+  tag.tap = false;
 }
 
 void loop(){
@@ -89,6 +107,10 @@ void loop(){
   String data;
   if(readRFID()){
     Serial.write(tag.card.c_str());
+  }
+  if(first){
+    tag.tap = false;
+    first = false;
   }
   //  read incoming serial data
   readUART();
@@ -110,13 +132,21 @@ void loop(){
   }
   // waktu.millisecond = calculateMillisRTC(now.second());
   if(barang.terhitung == barang.total){
-    display.setSegments(SEG_DONE);
-    display2.setSegments(SEG_DONE);
     if(!barang.resetState){
       tag.tap = true;
       barang.resetState = true;
+      // delay(1000);
+      display.setSegments(SEG_DONE);
+      display2.setSegments(SEG_DONE);
+      delay(2000);
+      display.setBrightness(7, false);
+      display2.setBrightness(7, false);
+      display.setSegments(blank);
+      display2.setSegments(blank);
     }
   }else{
+    display.setBrightness(0x0f, true);
+    display2.setBrightness(0x0f, true);
     display2.showNumberDec(barang.total, false);
     display.showNumberDec(barang.terhitung, false);
     barang.resetState = false;
@@ -165,14 +195,18 @@ void waitForWiFi(){
   lcd.clear();
 
   lcd.setCursor(3,1);
-  lcd.print("Connecting to");
+  lcd.print("Checking RFID");
+  // lcd.print("Connecting to");
   lcd.setCursor(8,2);
-  lcd.print("WiFi");
-  Serial.write("GET_IP");
+  lcd.print("....");
+  // lcd.print("WiFi");
+  //new
+  data = tag.card + ",GET_IP";
+  Serial.write(data.c_str());
   while(!Serial.available()){
-    Serial.write("GET_IP");
     delay(10);
   }
+  data = "";
   while(Serial.available()){
     char s = Serial.read();
     data += s;
@@ -208,7 +242,7 @@ void showMenu(byte jam, byte menit, byte detik){
   lcd.print(detik);
   lcd.setCursor(0,1);
   lcd.print("Name  : ");
-  lcd.print(tag.card);
+  lcd.print(tag.nama);
   lcd.setCursor(0,2);
   lcd.print("Stat  : ");
   if(stateCounter){
@@ -218,13 +252,24 @@ void showMenu(byte jam, byte menit, byte detik){
       lcd.print("Run     ");
     }
   }else{
-    lcd.print("Stop");
+    if(bs.holdState && !bs.setupState && !bs.stopState){
+      lcd.print("Hold");
+    }else if(!bs.holdState && bs.setupState && !bs.stopState){
+      lcd.print("Setup");
+    }else if(!bs.holdState && !bs.setupState && bs.stopState){
+      lcd.print("Stop");
+    }
+    // lcd.print("Stop");
   }
   lcd.setCursor(0,3);
-  menu = "Cycle : " + (String)barang.cycleTime + " ms";
-  for(byte i = 0; i < menu.length(); i++){
-    lcd.print(menu[i]);
-  }
+  // lcd.print("Cycle : ");
+  // if(barang.terhitung > 0){
+  //   menu = "I : " + String(barang.terhitung - 1) + "O : " + String(barang.terhitung);
+  // }else{
+  //   menu = "I : " + String(barang.terhitung) + "O : " + String(barang.terhitung);
+  // }
+  menu = (String)barang.cycleTime + " ms";
+  lcd.print(menu);
   for(byte i = menu.length(); i < 20; i++){
     lcd.print(" ");
   }
@@ -236,12 +281,47 @@ void readUART(){
     char s = Serial.read();
     data += s;
   }
+  if(data != ""){
+    parsing(data);
+    if(comm.jumlahData == 2){
+      barang.total = comm.data[0].toInt();
+      EEPROM.write(0, barang.total);
+      tag.nama = comm.data[1];
+    }
+  }
   if(data == "success"){
     if(tag.tap){
       digitalWrite(READ_LED_PIN, HIGH);
     }else{
       digitalWrite(READ_LED_PIN, LOW);
     }
+  }else if(data == "button0"){
+    // bs.holdState = !bs.holdState;
+    if(!tag.tap){
+      if(!bs.setupState && !bs.stopState){
+        bs.holdState = !bs.holdState;
+        stateCounter = !stateCounter;
+      }
+    }
+    Serial.write("yess");
+  }else if(data == "button1"){
+    // bs.setupState = !bs.setupState;
+    if(!tag.tap){
+      if(!bs.holdState && !bs.stopState){
+        bs.setupState = !bs.setupState;
+        stateCounter = !stateCounter;
+      }
+    }
+    Serial.write("yess");
+  }else if(data == "button2"){
+    // bs.stopState = !bs.stopState;
+    if(!tag.tap){
+      if(!bs.holdState && !bs.setupState){
+        bs.stopState = !bs.stopState;
+        stateCounter = !stateCounter;
+      }
+    }
+    Serial.write("yess");
   }
 }
 
@@ -251,14 +331,16 @@ unsigned int calculateCycle(){
     if(countState != countPrevState){
       countPrevState = countState;    
       if(countState){
-        barang.terhitung++;
-        if(barang.terhitung != 1){
-          barang.prevStamp = barang.currentStamp;
-          barang.currentStamp = millis();
-          hasil = barang.currentStamp - barang.prevStamp;
-        }else{
-          barang.currentStamp = millis();
-          return 0;
+        if(stateCounter){
+          barang.terhitung++;
+          if(barang.terhitung != 1){
+            barang.prevStamp = barang.currentStamp;
+            barang.currentStamp = millis();
+            hasil = barang.currentStamp - barang.prevStamp;
+          }else{
+            barang.currentStamp = millis();
+            return 0;
+          }
         }
       }
     }
@@ -278,4 +360,19 @@ unsigned int calculateMillisRTC(byte detik){
     hasil = current - prev;
   }
   return hasil;
+}
+
+void parsing(String dataString){
+  byte i = 0, dataNow = 0;
+  comm.jumlahData = 1;
+  comm.data[dataNow] = "";
+  for(i = 0; i < dataString.length(); i++){
+    if(dataString[i] == ','){
+      comm.jumlahData++;
+      dataNow++;
+      comm.data[dataNow] = "";
+    }else{
+      comm.data[dataNow] += dataString[i];
+    }
+  }
 }
