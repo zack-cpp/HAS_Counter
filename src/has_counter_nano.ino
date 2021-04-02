@@ -6,8 +6,8 @@
 
 #define RDM6300_RX_PIN 9
 #define READ_LED_PIN 13
-#define CLK 2
-#define DIO 3
+#define CLK 3
+#define DIO 2
 #define CLK2  4
 #define DIO2  5
 #define IR  8
@@ -22,13 +22,14 @@ struct Tag{
   String card;
   String prevCard;
   String nama;
-  bool change = false;
+  bool tapState = false;
   bool tap = false;
 }tag;
 
 struct Time{
   byte millisecond;
   byte prevSecond;
+  unsigned long RFdelay;
 }waktu;
 
 struct Barang{
@@ -45,6 +46,7 @@ struct Comm{
   String data[2];
   String cmdToEsp;
   byte jumlahData = 0;
+  byte action = 4;
 }comm;
 
 struct States{
@@ -75,9 +77,11 @@ unsigned int calculateCycle();
 unsigned int calculateMillisRTC(byte detik);
 
 bool readRFID();
+void(* resetFunc) (void) = 0;
 
 void setup(){
 	Serial.begin(115200);
+  rdm6300.begin(RDM6300_RX_PIN);
   if (! rtc.begin()) {
     Serial.println("Couldn't find RTC");
     Serial.flush();
@@ -97,7 +101,6 @@ void setup(){
 	pinMode(READ_LED_PIN, OUTPUT);
   pinMode(IR, INPUT);
 	digitalWrite(READ_LED_PIN, LOW);
-	rdm6300.begin(RDM6300_RX_PIN);
   waitForWiFi();
   tag.tap = false;
 }
@@ -105,8 +108,16 @@ void setup(){
 void loop(){
   DateTime now = rtc.now();
   String data;
+  if(millis() - waktu.RFdelay > 1000){
+    tag.tapState = true;
+  }else{
+    tag.tapState = false;
+  }
   if(readRFID()){
-    Serial.write(tag.card.c_str());
+    if(tag.tapState){
+      comm.cmdToEsp = "TAG," + tag.card;
+      Serial.write(comm.cmdToEsp.c_str());
+    }
   }
   if(first){
     tag.tap = false;
@@ -131,14 +142,15 @@ void loop(){
     }
   }
   // waktu.millisecond = calculateMillisRTC(now.second());
-  if(barang.terhitung == barang.total){
+  if(tag.tap){
+  // if(barang.terhitung == barang.total){
     if(!barang.resetState){
       tag.tap = true;
       barang.resetState = true;
       // delay(1000);
-      display.setSegments(SEG_DONE);
-      display2.setSegments(SEG_DONE);
-      delay(2000);
+      // display.setSegments(SEG_DONE);
+      // display2.setSegments(SEG_DONE);
+      // delay(2000);
       display.setBrightness(7, false);
       display2.setBrightness(7, false);
       display.setSegments(blank);
@@ -172,6 +184,7 @@ void loop(){
 
 bool readRFID(){
   if (rdm6300.update()){
+    waktu.RFdelay = millis();
     tag.card = String(rdm6300.get_tag_id(), HEX);
     if(tag.card != tag.prevCard){
       tag.prevCard = tag.card;
@@ -190,6 +203,9 @@ void waitForWiFi(){
   lcd.setCursor(6,1);
   lcd.print("Tap RFID");
   while(!readRFID()){
+
+  }
+  while(readRFID()){
 
   }
   lcd.clear();
@@ -248,26 +264,25 @@ void showMenu(byte jam, byte menit, byte detik){
   if(stateCounter){
     if(tag.tap){
       lcd.print("Complete");
-    }else{
+      comm.action = 4;
+      }else{
       lcd.print("Run     ");
+      comm.action = 1;
     }
   }else{
     if(bs.holdState && !bs.setupState && !bs.stopState){
       lcd.print("Hold");
+      comm.action = 2;
     }else if(!bs.holdState && bs.setupState && !bs.stopState){
       lcd.print("Setup");
+      comm.action = 3;
     }else if(!bs.holdState && !bs.setupState && bs.stopState){
       lcd.print("Stop");
+      comm.action = 4;
     }
     // lcd.print("Stop");
   }
   lcd.setCursor(0,3);
-  // lcd.print("Cycle : ");
-  // if(barang.terhitung > 0){
-  //   menu = "I : " + String(barang.terhitung - 1) + "O : " + String(barang.terhitung);
-  // }else{
-  //   menu = "I : " + String(barang.terhitung) + "O : " + String(barang.terhitung);
-  // }
   menu = (String)barang.cycleTime + " ms";
   lcd.print(menu);
   for(byte i = menu.length(); i < 20; i++){
@@ -333,6 +348,8 @@ unsigned int calculateCycle(){
       if(countState){
         if(stateCounter){
           barang.terhitung++;
+          comm.cmdToEsp = "jobsend," + (String)barang.terhitung + "," + (String)comm.action;
+          Serial.write(comm.cmdToEsp.c_str());
           if(barang.terhitung != 1){
             barang.prevStamp = barang.currentStamp;
             barang.currentStamp = millis();

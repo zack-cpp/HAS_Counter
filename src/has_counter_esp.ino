@@ -3,8 +3,10 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
-#define SSID "ZaCK"
-#define PASS "2444666668888888000000"
+#define SSID "Nokia 6.1 Plus"
+#define PASS "yeyekhaha"
+// #define SSID "ZaCK"
+// #define PASS "2444666668888888000000"
 // #define DEVICE_ID "7hx2vOBXJ"
 #define DEVICE_ID "1otuf6bfM"
 // #define SSID "rumahkucing"
@@ -20,13 +22,8 @@ class MQTT{
   const char* pass = "IOTku@303";
   const char* subTopic = "return/startjob";
   const char* pubTopic = "counter/mesin";
+  const char* countTopic = "counter/mesin/jobsend";
   uint16_t port = 1883;
-  // const char* server = "tailor.cloudmqtt.com";
-  // const char* username = "ghavsonc";
-  // const char* pass = "1FBDeHNad_kb";
-  // const char* subTopic = "zackcoba2";
-  // const char* pubTopic = "zackPub";
-  // uint16_t port = 13001;
   void reconnect();
 }mqtt;
 
@@ -37,7 +34,7 @@ struct Network{
 }network;
 
 struct Comm{
-  String data[2];
+  String data[3];
   String cmdToNano;
   byte jumlahData = 1;
 }comm;
@@ -53,9 +50,6 @@ SoftwareSerial serial(D4, D3);
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-// String uartData[2];
-// String ip;
-
 const byte BUTTON[3] = {PIN_HOLD, PIN_SETUP, PIN_STOP};
 
 void getMQTT(char* topic, byte* payload, unsigned int length);
@@ -66,9 +60,9 @@ String ipToString(IPAddress ip);
 void setup(){
   serial.begin(115200);
   Serial.begin(9600);
-  pinMode(PIN_HOLD, INPUT_PULLUP);
-  pinMode(PIN_SETUP, INPUT_PULLUP);
-  pinMode(PIN_STOP, INPUT_PULLUP);
+  pinMode(PIN_HOLD, INPUT);
+  pinMode(PIN_SETUP, INPUT);
+  pinMode(PIN_STOP, INPUT);
   connectWiFi();
   client.setServer(mqtt.server,mqtt.port);
   client.setCallback(getMQTT);
@@ -88,18 +82,18 @@ void loop(){
       //  new
       parsing(data);
       if(comm.jumlahData != 1){
+        Serial.print("\nRaw: ");
+        Serial.println(data);
         Serial.print("Data 0: ");
         Serial.println(comm.data[0]);
         Serial.print("Data 1: ");
         Serial.println(comm.data[1]);
-        if(comm.data[1] == "GET_IP"){
-          andon.nanoReady = true;
-          // Serial.print("IP Sent: ");
-          // Serial.println(network.ip);
-          // serial.write(network.ip.c_str());
-        }
-        if(comm.data[0].length() == 6){
-          // serial.write("success");
+        Serial.print("Data 2: ");
+        Serial.println(comm.data[2]);
+        if(comm.data[0].length() == 6 && comm.data[0] != "jobsend" && comm.data[0] != "TAG"){
+          if(comm.data[1] == "GET_IP"){
+            andon.nanoReady = true;
+          }
           network.kirim = "";
           network.json = "{\"MESIN_ID\":\"" + (String)DEVICE_ID + "\",\"RF_ID\":\"" + comm.data[0] + "\"}";
           Serial.print("JSON: ");
@@ -107,14 +101,29 @@ void loop(){
           StaticJsonDocument<256> doc;
           deserializeJson(doc, network.json);
           serializeJson(doc, network.kirim);
-          // client.publish(mqtt.pubTopic,uartData[0].c_str());
           client.publish(mqtt.pubTopic, network.kirim.c_str());
-        }
-      }else{
-        if(data.length() == 6){
-          Serial.print("Data: ");
-          Serial.println(data);
-          serial.write("success");
+        }else if(comm.data[0] == "jobsend"){
+          network.kirim = "";
+          network.json = "{\"MESIN_ID\":\"" + (String)DEVICE_ID + "\",\"ACTUAL\":\"" + comm.data[1] + "\",\"action\":\"" + comm.data[2] + "\"}";
+          Serial.print("JSON: ");
+          Serial.println(network.json);
+          StaticJsonDocument<256> doc;
+          deserializeJson(doc, network.json);
+          serializeJson(doc, network.kirim);
+          client.publish(mqtt.countTopic, network.kirim.c_str());
+        }else if(comm.data[0] == "TAG" /*&& comm.data[2] != ""*/){
+          if(comm.data[1].length() == 6){
+            serial.write("success");
+            network.kirim = "";
+            network.json = "{\"MESIN_ID\":\"" + (String)DEVICE_ID + "\",\"RF_ID\":\"" + comm.data[1] + "\"}";
+            Serial.print("JSON: ");
+            Serial.println(network.json);
+            StaticJsonDocument<256> doc;
+            deserializeJson(doc, network.json);
+            serializeJson(doc, network.kirim);
+            client.publish(mqtt.pubTopic, network.kirim.c_str());
+            comm.data[2] = "";
+          }
         }
       }
     }
@@ -167,8 +176,6 @@ void getMQTT(char* topic, byte* payload, unsigned int length){
   JsonObject obj = doc.as<JsonObject>();
   
   if(topic == topic){
-    Serial.print("IP: ");
-    Serial.println(network.ip.c_str());
     if(andon.nanoReady){
       serial.write(network.ip.c_str());
       andon.nanoReady = false;
@@ -198,8 +205,6 @@ void MQTT::reconnect(){
     
     String clientId = "ESP8266Client-";
     clientId += String(random(0xffff), HEX);
-    
-    // if(client.connect(clientId.c_str(),mqtt.username,mqtt.pass)){
     if(client.connect(DEVICE_ID,mqtt.username,mqtt.pass)){
       Serial.println("connected");
       client.subscribe(mqtt.subTopic,1);
