@@ -3,14 +3,9 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
-// #define SSID "Nokia 6.1 Plus"
-// #define PASS "yeyekhaha"
 #define SSID "ZaCK"
 #define PASS "2444666668888888000000"
-// #define DEVICE_ID "7hx2vOBXJ"
 #define DEVICE_ID "1otuf6bfM"
-// #define SSID "rumahkucing"
-// #define PASS "1sl4m4g4m4ku"
 
 class MQTT{
   public:
