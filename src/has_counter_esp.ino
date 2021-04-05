@@ -3,17 +3,14 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
-#define SSID "Nokia 6.1 Plus"
-#define PASS "yeyekhaha"
-// #define SSID "ZaCK"
-// #define PASS "2444666668888888000000"
+// #define SSID "Nokia 6.1 Plus"
+// #define PASS "yeyekhaha"
+#define SSID "ZaCK"
+#define PASS "2444666668888888000000"
 // #define DEVICE_ID "7hx2vOBXJ"
 #define DEVICE_ID "1otuf6bfM"
 // #define SSID "rumahkucing"
 // #define PASS "1sl4m4g4m4ku"
-#define PIN_HOLD  D2
-#define PIN_SETUP D5
-#define PIN_STOP  D6
 
 class MQTT{
   public:
@@ -60,9 +57,12 @@ String ipToString(IPAddress ip);
 void setup(){
   serial.begin(115200);
   Serial.begin(9600);
-  pinMode(PIN_HOLD, INPUT);
-  pinMode(PIN_SETUP, INPUT);
-  pinMode(PIN_STOP, INPUT);
+  pinMode(PIN_HOLD, OUTPUT);
+  pinMode(PIN_SETUP, OUTPUT);
+  pinMode(PIN_STOP, OUTPUT);
+  digitalWrite(PIN_HOLD, LOW);
+  digitalWrite(PIN_SETUP, LOW);
+  digitalWrite(PIN_STOP, LOW);
   connectWiFi();
   client.setServer(mqtt.server,mqtt.port);
   client.setCallback(getMQTT);
@@ -111,7 +111,7 @@ void loop(){
           deserializeJson(doc, network.json);
           serializeJson(doc, network.kirim);
           client.publish(mqtt.countTopic, network.kirim.c_str());
-        }else if(comm.data[0] == "TAG" /*&& comm.data[2] != ""*/){
+        }else if(comm.data[0] == "TAG"){
           if(comm.data[1].length() == 6){
             serial.write("success");
             network.kirim = "";
@@ -125,19 +125,6 @@ void loop(){
             comm.data[2] = "";
           }
         }
-      }
-    }
-    for(byte i = 0; i < 3; i++){
-      if(digitalRead(BUTTON[i]) == LOW){
-        while(digitalRead(BUTTON[i]) == LOW){
-
-        }
-        data = "button" + (String)i;
-        Serial.println(data);
-        serial.write(data.c_str());
-        // while(!serial.available()){
-        //   delay(10);
-        // }
       }
     }
     client.loop();
@@ -202,9 +189,6 @@ void getMQTT(char* topic, byte* payload, unsigned int length){
 void MQTT::reconnect(){
   while (!client.connected()){
     Serial.print("Attempting MQTT connection...");
-    
-    String clientId = "ESP8266Client-";
-    clientId += String(random(0xffff), HEX);
     if(client.connect(DEVICE_ID,mqtt.username,mqtt.pass)){
       Serial.println("connected");
       client.subscribe(mqtt.subTopic,1);
