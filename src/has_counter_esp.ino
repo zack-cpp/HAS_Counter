@@ -52,12 +52,6 @@ String ipToString(IPAddress ip);
 void setup(){
   serial.begin(115200);
   Serial.begin(9600);
-  pinMode(PIN_HOLD, OUTPUT);
-  pinMode(PIN_SETUP, OUTPUT);
-  pinMode(PIN_STOP, OUTPUT);
-  digitalWrite(PIN_HOLD, LOW);
-  digitalWrite(PIN_SETUP, LOW);
-  digitalWrite(PIN_STOP, LOW);
   connectWiFi();
   client.setServer(mqtt.server,mqtt.port);
   client.setCallback(getMQTT);
