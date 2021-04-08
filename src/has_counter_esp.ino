@@ -1,11 +1,11 @@
-#include <ESP8266WiFi.h>
 #include <SoftwareSerial.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <WiFiManager.h>
 
-#define SSID "ZaCK"
-#define PASS "2444666668888888000000"
 #define DEVICE_ID "1otuf6bfM"
+#define AP_NAME "HAS Counter"
+#define AP_PASS "12345678"
 
 class MQTT{
   public:
@@ -42,17 +42,29 @@ SoftwareSerial serial(D4, D3);
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-const byte BUTTON[3] = {PIN_HOLD, PIN_SETUP, PIN_STOP};
-
 void getMQTT(char* topic, byte* payload, unsigned int length);
 void connectWiFi();
 void parsing(String dataString);
 String ipToString(IPAddress ip);
 
 void setup(){
+  WiFi.mode(WIFI_STA);
   serial.begin(115200);
   Serial.begin(9600);
-  connectWiFi();
+
+  WiFiManager wm;
+  wm.setDebugOutput(false);
+  wm.setAPCallback(callback);
+  bool res = wm.autoConnect(AP_NAME, AP_PASS);
+  if(res){
+    Serial.print("Connected to: ");
+    Serial.println(WiFi.SSID());
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+    serial.print("CONFIG_DONE");
+    network.ip = ipToString(WiFi.localIP());
+  }
+  // connectWiFi();
   client.setServer(mqtt.server,mqtt.port);
   client.setCallback(getMQTT);
 }
@@ -118,10 +130,11 @@ void loop(){
     }
     client.loop();
   }else{
-    connectWiFi();
+    WiFiManager wm;
+    wm.autoConnect(AP_NAME, AP_PASS);
   }  
 }
-
+/*
 void connectWiFi(){
   WiFi.begin(SSID, PASS);
   Serial.print("Connecting");
@@ -133,7 +146,7 @@ void connectWiFi(){
   Serial.println("");
   Serial.println(network.ip);
 }
-
+*/
 String ipToString(IPAddress ipA){
   String s="";
   for (int i=0; i<4; i++)
@@ -204,4 +217,11 @@ void parsing(String dataString){
       comm.data[dataNow] += dataString[i];
     }
   }
+}
+
+void callback(WiFiManager *myWiFiManager){
+  Serial.println("Entering AP Mode");
+  Serial.println(WiFi.softAPIP());
+  Serial.println(myWiFiManager->getConfigPortalSSID());
+  serial.print("AP_CONFIG");
 }
