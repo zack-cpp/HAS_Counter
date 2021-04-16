@@ -61,7 +61,9 @@ void setup(){
     Serial.println(WiFi.SSID());
     Serial.print("IP: ");
     Serial.println(WiFi.localIP());
-    serial.print("CONFIG_DONE");
+    comm.cmdToNano = "CONFIG_DONE";
+    serial.write(comm.cmdToNano.c_str());
+    Serial.println(comm.cmdToNano);
     network.ip = ipToString(WiFi.localIP());
   }
   // connectWiFi();
@@ -73,7 +75,16 @@ void loop(){
   String data;
   if(WiFi.status() == WL_CONNECTED){
     if(!client.connected()){
-      mqtt.reconnect();
+      if(WiFi.status() != WL_CONNECTED){
+        WiFiManager wm;
+        bool res = wm.autoConnect(AP_NAME, AP_PASS);
+        if(res){
+          comm.cmdToNano = "CONFIG_DONE";
+          serial.write(comm.cmdToNano.c_str());
+        }
+      }else{
+        mqtt.reconnect();
+      }
     }
     while(serial.available()){
       char s = serial.read();
@@ -194,6 +205,8 @@ void MQTT::reconnect(){
     if(client.connect(DEVICE_ID,mqtt.username,mqtt.pass)){
       Serial.println("connected");
       client.subscribe(mqtt.subTopic,1);
+      comm.cmdToNano = "CONFIG_DONE";
+      serial.write(comm.cmdToNano.c_str());
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -220,8 +233,11 @@ void parsing(String dataString){
 }
 
 void callback(WiFiManager *myWiFiManager){
+  comm.cmdToNano = "AP_CONFIG";
+  serial.write(comm.cmdToNano.c_str());
   Serial.println("Entering AP Mode");
   Serial.println(WiFi.softAPIP());
   Serial.println(myWiFiManager->getConfigPortalSSID());
-  serial.print("AP_CONFIG");
+  Serial.println(comm.cmdToNano);
+
 }
