@@ -275,7 +275,7 @@ bool readRFID(){
       tag.prevCard = tag.card;
       tag.tap = false;
     }else{
-      tag.tap = !tag.tap;
+      tag.tap = !tag.tap; 
     }
     return true;
   }else{
@@ -288,7 +288,29 @@ void waitForWiFi(){
   lcd.setCursor(6,1);
   lcd.print("Tap RFID");
   while(!readRFID()){
-
+    while(Serial.available()){
+      char s = Serial.read();
+      data += s;
+    }
+    if(data != ""){
+      if(data == "AP_CONFIG"){
+        lcd.clear();
+        lcd.setCursor(2,0);
+        lcd.print("Please Configure");
+        lcd.setCursor(8,1);
+        lcd.print("WiFi");
+        lcd.setCursor(4,2);
+        lcd.print("192.168.4.1");
+        data = "";
+      }else if(data == "CONFIG_DONE"){
+        lcd.clear();
+        lcd.setCursor(6,1);
+        lcd.print("Tap RFID");
+        data = "";
+      }
+    }else{
+      
+    }
   }
   while(readRFID()){
 
@@ -371,6 +393,7 @@ void showMenu(byte jam, byte menit, byte detik){
 
 void readUART(){
   String data;
+  String data2;
   while(Serial.available()){
     char s = Serial.read();
     data += s;
@@ -387,6 +410,42 @@ void readUART(){
       digitalWrite(READ_LED_PIN, HIGH);
     }else{
       digitalWrite(READ_LED_PIN, LOW);
+    }
+  }else if(data == "AP_CONFIG"){
+    lcd.clear();
+    lcd.setCursor(2,0);
+    lcd.print("Please Configure");
+    lcd.setCursor(8,1);
+    lcd.print("WiFi");
+    lcd.setCursor(4,2);
+    lcd.print("192.168.4.1");
+    while(true){
+      while(Serial.available()){
+        char s = Serial.read();
+        data2 += s;
+      }
+      if(data2 != ""){
+        if(data2 == "CONFIG_DONE"){
+          break;
+        }
+      }
+    }
+  }else if(data == "SERVER_CONFIG"){
+    lcd.clear();
+    lcd.setCursor(3,0);
+    lcd.print("Connecting to");
+    lcd.setCursor(7,1);
+    lcd.print("Server");
+    while(true){
+      while(Serial.available()){
+        char s = Serial.read();
+        data2 += s;
+      }
+      if(data2 != ""){
+        if(data2 == "CONFIG_DONE"){
+          break;
+        }
+      }
     }
   }
 }
