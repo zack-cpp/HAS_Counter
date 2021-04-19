@@ -164,25 +164,40 @@ void loop(){
 
   for(byte i = 0; i < 3; i++){
     if(digitalRead(bs.BUTTON[i]) == LOW){
-      pinMode(bs.LED[i], OUTPUT);
-      digitalWrite(bs.LED[i], LOW);
-      bs.prevState[i] = true;
-      comm.sendActionState2 = true;
+      // pinMode(bs.LED[i], OUTPUT);
+      // digitalWrite(bs.LED[i], LOW);
+      // bs.prevState[i] = true;
+      // comm.sendActionState2 = true;
       if(!tag.tap){
         if(i == 0){
           if(!bs.setupState && !bs.stopState){
+            pinMode(bs.LED[i], OUTPUT);
+            digitalWrite(bs.LED[i], LOW);
+            bs.prevState[i] = true;
+            comm.sendActionState2 = true;
+
             bs.holdState = true;
             stateCounter = false;
             comm.action = 2;
           }
         }else if(i == 1){
           if(!bs.holdState && !bs.stopState){
+            pinMode(bs.LED[i], OUTPUT);
+            digitalWrite(bs.LED[i], LOW);
+            bs.prevState[i] = true;
+            comm.sendActionState2 = true;
+
             bs.setupState = true;
             stateCounter = false;
             comm.action = 3;
           }
         }else if(i == 2){
           if(!bs.holdState && !bs.setupState){
+            pinMode(bs.LED[i], OUTPUT);
+            digitalWrite(bs.LED[i], LOW);
+            bs.prevState[i] = true;
+            comm.sendActionState2 = true;
+
             bs.stopState = true;
             stateCounter = false;
             comm.action = 4;
@@ -199,7 +214,7 @@ void loop(){
         comm.action = 3;
       }else if(i == 2){
         bs.stopState = false;
-        comm.action = 1;
+        comm.action = 4;
       }
       if(!bs.holdState && !bs.setupState && !bs.stopState){
         if(bs.prevState[i]){
@@ -271,11 +286,11 @@ bool readRFID(){
   if (rdm6300.update()){
     waktu.RFdelay = millis();
     tag.card = String(rdm6300.get_tag_id(), HEX);
-    if(tag.card != tag.prevCard){
+    if(tag.card != tag.prevCard && first == true){
       tag.prevCard = tag.card;
       tag.tap = false;
-    }else{
-      tag.tap = !tag.tap; 
+    }else if(tag.card == tag.prevCard){
+      tag.tap = !tag.tap;
     }
     return true;
   }else{
@@ -284,6 +299,7 @@ bool readRFID(){
 }
 
 void waitForWiFi(){
+  unsigned long waitRFID;
   String data;
   lcd.setCursor(6,1);
   lcd.print("Tap RFID");
@@ -292,24 +308,20 @@ void waitForWiFi(){
       char s = Serial.read();
       data += s;
     }
-    if(data != ""){
-      if(data == "AP_CONFIG"){
-        lcd.clear();
-        lcd.setCursor(2,0);
-        lcd.print("Please Configure");
-        lcd.setCursor(8,1);
-        lcd.print("WiFi");
-        lcd.setCursor(4,2);
-        lcd.print("192.168.4.1");
-        data = "";
-      }else if(data == "CONFIG_DONE"){
-        lcd.clear();
-        lcd.setCursor(6,1);
-        lcd.print("Tap RFID");
-        data = "";
-      }
-    }else{
-      
+    if(data == "AP_CONFIG"){
+      lcd.clear();
+      lcd.setCursor(2,0);
+      lcd.print("Please Configure");
+      lcd.setCursor(8,1);
+      lcd.print("WiFi");
+      lcd.setCursor(4,2);
+      lcd.print("192.168.4.1");
+      data = "";
+    }else if(data == "DONE"){
+      lcd.clear();
+      lcd.setCursor(6,1);
+      lcd.print("Tap RFID");
+      data = "";
     }
   }
   while(readRFID()){
@@ -326,7 +338,18 @@ void waitForWiFi(){
   lcd.print("....");
   data = tag.card + ",GET_IP";
   Serial.write(data.c_str());
+  waitRFID = millis();
   while(!Serial.available()){
+    if(millis() - waitRFID > 10000){
+      lcd.clear();
+      lcd.setCursor(0,1);
+      lcd.print("RFID Not Recognized");
+      lcd.setCursor(2,2);
+      lcd.print("Restart Counter");
+      while(true){
+
+      }
+    }
     delay(10);
   }
   data = "";
@@ -425,7 +448,7 @@ void readUART(){
         data2 += s;
       }
       if(data2 != ""){
-        if(data2 == "CONFIG_DONE"){
+        if(data2 == "DONE"){
           break;
         }
       }
@@ -442,7 +465,7 @@ void readUART(){
         data2 += s;
       }
       if(data2 != ""){
-        if(data2 == "CONFIG_DONE"){
+        if(data2 == "DONE"){
           break;
         }
       }
@@ -458,6 +481,7 @@ unsigned int calculateCycle(){
       if(countState){
         if(stateCounter){
           barang.terhitung++;
+          comm.action = 1;
           comm.cmdToEsp = "jobsend," + (String)barang.terhitung + "," + (String)comm.action;
           Serial.write(comm.cmdToEsp.c_str());
           if(barang.terhitung != 1){
