@@ -48,10 +48,10 @@ void parsing(String dataString);
 String ipToString(IPAddress ip);
 
 void setup(){
-  String data;
   WiFi.mode(WIFI_STA);
   serial.begin(115200);
   Serial.begin(9600);
+
   WiFiManager wm;
   wm.setDebugOutput(false);
   wm.setAPCallback(callback);
@@ -61,7 +61,7 @@ void setup(){
     Serial.println(WiFi.SSID());
     Serial.print("IP: ");
     Serial.println(WiFi.localIP());
-    comm.cmdToNano = "DONE";
+    comm.cmdToNano = "CONFIG_DONE";
     serial.write(comm.cmdToNano.c_str());
     Serial.println(comm.cmdToNano);
     network.ip = ipToString(WiFi.localIP());
@@ -73,69 +73,41 @@ void setup(){
 
 void loop(){
   String data;
-  if(!client.connected()){
-    if(WiFi.status() != WL_CONNECTED){
-      WiFiManager wm;
-      wm.setDebugOutput(false);
-      wm.setAPCallback(callback);
-      bool res = wm.autoConnect(AP_NAME, AP_PASS);
-      if(res){
-        Serial.print("Connected to: ");
-        Serial.println(WiFi.SSID());
-        Serial.print("IP: ");
-        Serial.println(WiFi.localIP());
-        comm.cmdToNano = "DONE";
-        serial.write(comm.cmdToNano.c_str());
-        Serial.println(comm.cmdToNano);
-        network.ip = ipToString(WiFi.localIP());
-      }
-    }else{
-      mqtt.reconnect();
-    }
-  }
-  while(serial.available()){
-    char s = serial.read();
-    data += s;
-  }
-  if(data != ""){
-    if(data == "INIT"){
-      comm.cmdToNano = "DONE";
-      serial.write(comm.cmdToNano.c_str());
-    }
-    parsing(data);
-    if(comm.jumlahData != 1){
-      Serial.print("\nRaw: ");
-      Serial.println(data);
-      Serial.print("Data 0: ");
-      Serial.println(comm.data[0]);
-      Serial.print("Data 1: ");
-      Serial.println(comm.data[1]);
-      Serial.print("Data 2: ");
-      Serial.println(comm.data[2]);
-      if(comm.data[0].length() == 6 && comm.data[0] != "jobsend" && comm.data[0] != "TAG"){
-        if(comm.data[1] == "GET_IP"){
-          andon.nanoReady = true;
+  if(WiFi.status() == WL_CONNECTED){
+    if(!client.connected()){
+      if(WiFi.status() != WL_CONNECTED){
+        WiFiManager wm;
+        bool res = wm.autoConnect(AP_NAME, AP_PASS);
+        if(res){
+          comm.cmdToNano = "CONFIG_DONE";
+          serial.write(comm.cmdToNano.c_str());
         }
-        network.kirim = "";
-        network.json = "{\"MESIN_ID\":\"" + (String)DEVICE_ID + "\",\"RF_ID\":\"" + comm.data[0] + "\"}";
-        Serial.print("JSON: ");
-        Serial.println(network.json);
-        StaticJsonDocument<256> doc;
-        deserializeJson(doc, network.json);
-        serializeJson(doc, network.kirim);
-        client.publish(mqtt.pubTopic, network.kirim.c_str());
-      }else if(comm.data[0] == "jobsend"){
-        network.kirim = "";
-        network.json = "{\"MESIN_ID\":\"" + (String)DEVICE_ID + "\",\"ACTUAL\":\"" + comm.data[1] + "\",\"action\":\"" + comm.data[2] + "\"}";
-        Serial.print("JSON: ");
-        Serial.println(network.json);
-        StaticJsonDocument<256> doc;
-        deserializeJson(doc, network.json);
-        serializeJson(doc, network.kirim);
-        client.publish(mqtt.countTopic, network.kirim.c_str());
-      }else if(comm.data[0] == "TAG"){
-        if(comm.data[1].length() == 6){
-          serial.write("success");
+      }else{
+        mqtt.reconnect();
+      }
+    }
+    while(serial.available()){
+      char s = serial.read();
+      data += s;
+    }
+    if(data != ""){
+      parsing(data);
+      if(comm.jumlahData != 1){
+      // if(comm.jumlahData == 3){
+        Serial.print("\nRaw: ");
+        Serial.println(data);
+        Serial.print("Data 0: ");
+        Serial.println(comm.data[0]);
+        Serial.print("Data 1: ");
+        Serial.println(comm.data[1]);
+        Serial.print("Data 2: ");
+        Serial.println(comm.data[2]);
+        if(comm.data[0] == "GET_IP" && comm.data[0] != "jobsend" && comm.data[0] != "TAG"){
+          if(comm.data[1].length() == 6){
+            andon.nanoReady = true;
+          }
+          Serial.print("IP: ");
+          Serial.println(network.ip);
           network.kirim = "";
           network.json = "{\"MESIN_ID\":\"" + (String)DEVICE_ID + "\",\"RF_ID\":\"" + comm.data[1] + "\"}";
           Serial.print("JSON: ");
@@ -144,12 +116,36 @@ void loop(){
           deserializeJson(doc, network.json);
           serializeJson(doc, network.kirim);
           client.publish(mqtt.pubTopic, network.kirim.c_str());
-          comm.data[2] = "";
+        }else if(comm.data[0] == "jobsend"){
+          network.kirim = "";
+          network.json = "{\"MESIN_ID\":\"" + (String)DEVICE_ID + "\",\"ACTUAL\":\"" + comm.data[1] + "\",\"action\":\"" + comm.data[2] + "\"}";
+          Serial.print("JSON: ");
+          Serial.println(network.json);
+          StaticJsonDocument<256> doc;
+          deserializeJson(doc, network.json);
+          serializeJson(doc, network.kirim);
+          client.publish(mqtt.countTopic, network.kirim.c_str());
+        }else if(comm.data[0] == "TAG"){
+          if(comm.data[1].length() == 6){
+            serial.write("success");
+            network.kirim = "";
+            network.json = "{\"MESIN_ID\":\"" + (String)DEVICE_ID + "\",\"RF_ID\":\"" + comm.data[1] + "\"}";
+            Serial.print("JSON: ");
+            Serial.println(network.json);
+            StaticJsonDocument<256> doc;
+            deserializeJson(doc, network.json);
+            serializeJson(doc, network.kirim);
+            client.publish(mqtt.pubTopic, network.kirim.c_str());
+            comm.data[2] = "";
+          }
         }
       }
     }
-  }
-  client.loop();  
+    client.loop();
+  }else{
+    WiFiManager wm;
+    wm.autoConnect(AP_NAME, AP_PASS);
+  }  
 }
 
 String ipToString(IPAddress ipA){
@@ -170,19 +166,13 @@ void getMQTT(char* topic, byte* payload, unsigned int length){
   JsonObject obj = doc.as<JsonObject>();
   
   if(topic == topic){
-    //new
+    if(andon.nanoReady){
+      serial.write(network.ip.c_str());
+      andon.nanoReady = false;
+      delay(1000);
+    }
     andon.target = obj["t"].as<String>();
     andon.nama = obj["n"].as<String>();
-    //
-    if(andon.nanoReady){
-      if(andon.nama != ""){
-        serial.write(network.ip.c_str());
-        andon.nanoReady = false;
-        delay(1000);
-      }
-    }
-    // andon.target = obj["t"].as<String>();
-    // andon.nama = obj["n"].as<String>();
     
     comm.cmdToNano = andon.target + "," + andon.nama;
     serial.write(comm.cmdToNano.c_str());
@@ -200,7 +190,6 @@ void getMQTT(char* topic, byte* payload, unsigned int length){
 }
 
 void MQTT::reconnect(){
-  delay(1000);
   while (!client.connected()){
     if(WiFi.status() != WL_CONNECTED){
       WiFiManager wm;
@@ -212,8 +201,8 @@ void MQTT::reconnect(){
         Serial.println(WiFi.SSID());
         Serial.print("IP: ");
         Serial.println(WiFi.localIP());
-        comm.cmdToNano = "DONE";
-        serial.write(comm.cmdToNano.c_str());
+        // comm.cmdToNano = "CONFIG_DONE";
+        // serial.write(comm.cmdToNano.c_str());
         Serial.println(comm.cmdToNano);
         network.ip = ipToString(WiFi.localIP());
       }
@@ -222,10 +211,11 @@ void MQTT::reconnect(){
     if(client.connect(DEVICE_ID,mqtt.username,mqtt.pass)){
       Serial.println("connected");
       client.subscribe(mqtt.subTopic,1);
-      comm.cmdToNano = "DONE";
-      serial.write(comm.cmdToNano.c_str());
+      // comm.cmdToNano = "CONFIG_DONE";
+      // serial.write(comm.cmdToNano.c_str());
     } else {
-      serial.write("SERVER_CONFIG");
+      comm.cmdToNano = "SERVER_CONFIG";
+      serial.write(comm.cmdToNano.c_str());
       Serial.print("failed, rc=");
       Serial.print(client.state());
       Serial.println(" try again in 5 seconds");
