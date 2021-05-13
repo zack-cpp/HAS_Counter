@@ -87,8 +87,7 @@ void loop(){
       }
     }
     while(serial.available()){
-      char s = serial.read();
-      data += s;
+      data = serial.readStringUntil('\n');
     }
     if(data != ""){
       parsing(data);
@@ -167,6 +166,7 @@ void getMQTT(char* topic, byte* payload, unsigned int length){
   
   if(topic == topic){
     if(andon.nanoReady){
+      network.ip += "\n";
       serial.write(network.ip.c_str());
       andon.nanoReady = false;
       delay(1000);
