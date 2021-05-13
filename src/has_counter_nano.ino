@@ -138,7 +138,7 @@ void loop(){
     if(tag.tapState){
       waktu.buzzTime = millis();
       bs.buzzState = true;
-      comm.cmdToEsp = "TAG," + tag.card;
+      comm.cmdToEsp = "TAG," + tag.card + "\n";
       Serial.write(comm.cmdToEsp.c_str());
     }
   }
@@ -230,7 +230,7 @@ void loop(){
     }
     if(comm.sendActionState){
       if(comm.sendActionState2){
-        comm.cmdToEsp = "jobsend," + (String)barang.terhitung + "," + (String)comm.action;
+        comm.cmdToEsp = "jobsend," + (String)barang.terhitung + "," + (String)comm.action + "\n";
         Serial.write(comm.cmdToEsp.c_str());
         comm.sendActionState = false;
       }
@@ -305,29 +305,30 @@ void waitForWiFi(){
   lcd.setCursor(6,1);
   lcd.print("Tap RFID");
   while(!readRFID()){
-    while(Serial.available()){
-      char s = Serial.read();
-      data += s;
-    }
-    if(data != ""){
-      if(data == "AP_CONFIG"){
-        lcd.clear();
-        lcd.setCursor(2,0);
-        lcd.print("Please Configure");
-        lcd.setCursor(8,1);
-        lcd.print("WiFi");
-        lcd.setCursor(4,2);
-        lcd.print("192.168.4.1");
-        data = "";
-      }else if(data == "CONFIG_DONE"){
-        lcd.clear();
-        lcd.setCursor(6,1);
-        lcd.print("Tap RFID");
-        data = "";
-      }
-    }else{
+    readUART();
+    // while(Serial.available()){
+    //   char s = Serial.read();
+    //   data += s;
+    // }
+    // if(data != ""){
+    //   if(data == "AP_CONFIG"){
+    //     lcd.clear();
+    //     lcd.setCursor(2,0);
+    //     lcd.print("Please Configure");
+    //     lcd.setCursor(8,1);
+    //     lcd.print("WiFi");
+    //     lcd.setCursor(4,2);
+    //     lcd.print("192.168.4.1");
+    //     data = "";
+    //   }else if(data == "CONFIG_DONE"){
+    //     lcd.clear();
+    //     lcd.setCursor(6,1);
+    //     lcd.print("Tap RFID");
+    //     data = "";
+    //   }
+    // }else{
       
-    }
+    // }
   }
   while(readRFID()){
 
@@ -342,7 +343,7 @@ void waitForWiFi(){
   lcd.setCursor(8,2);
   lcd.print("....");
   // data = tag.card + ",GET_IP";
-  data = "GET_IP," + tag.card;
+  data = "GET_IP," + tag.card + "\n";
   Serial.write(data.c_str());
   waitRFID = millis();
   while(!Serial.available()){
@@ -360,8 +361,7 @@ void waitForWiFi(){
   }
   data = "";
   while(Serial.available()){
-    char s = Serial.read();
-    data += s;
+    data = Serial.readStringUntil('\n');
   }
   if(data != ""){
     stateCounter = true;
@@ -429,50 +429,43 @@ void readUART(){
   }
   if(data != ""){
     parsing(data);
-    if(comm.jumlahData == 2){
+    if(comm.jumlahData != 1){
       barang.total = comm.data[0].toInt();
       tag.nama = comm.data[1];
-    }
-  }
-  if(data == "success"){
-    if(tag.tap){
-      digitalWrite(READ_LED_PIN, HIGH);
     }else{
-      digitalWrite(READ_LED_PIN, LOW);
-    }
-  }else if(data == "AP_CONFIG"){
-    lcd.clear();
-    lcd.setCursor(2,0);
-    lcd.print("Please Configure");
-    lcd.setCursor(8,1);
-    lcd.print("WiFi");
-    lcd.setCursor(4,2);
-    lcd.print("192.168.4.1");
-    while(true){
-      while(Serial.available()){
-        char s = Serial.read();
-        data2 += s;
-      }
-      if(data2 != ""){
-        if(data2 == "CONFIG_DONE"){
-          break;
+      if(data == "AP_CONFIG"){
+        lcd.clear();
+        lcd.setCursor(2,0);
+        lcd.print("Please Configure");
+        lcd.setCursor(8,1);
+        lcd.print("WiFi");
+        lcd.setCursor(4,2);
+        lcd.print("192.168.4.1");
+        while(true){
+          while(Serial.available()){
+            data2 = Serial.readStringUntil('\n');
+          }
+          if(data2 != ""){
+            if(data2 == "CONFIG_DONE"){
+              break;
+            }
+          }
         }
-      }
-    }
-  }else if(data == "SERVER_CONFIG"){
-    lcd.clear();
-    lcd.setCursor(3,0);
-    lcd.print("Connecting to");
-    lcd.setCursor(7,1);
-    lcd.print("Server");
-    while(true){
-      while(Serial.available()){
-        char s = Serial.read();
-        data2 += s;
-      }
-      if(data2 != ""){
-        if(data2 == "CONFIG_DONE"){
-          break;
+      }else if(data == "SERVER_CONFIG"){
+        lcd.clear();
+        lcd.setCursor(3,0);
+        lcd.print("Connecting to");
+        lcd.setCursor(7,1);
+        lcd.print("Server");
+        while(true){
+          while(Serial.available()){
+            data2 = Serial.readStringUntil('\n');
+          }
+          if(data2 != ""){
+            if(data2 == "CONFIG_DONE"){
+              break;
+            }
+          }
         }
       }
     }
@@ -488,7 +481,7 @@ unsigned int calculateCycle(){
         if(stateCounter){
           barang.terhitung++;
           comm.action = 1;
-          comm.cmdToEsp = "jobsend," + (String)barang.terhitung + "," + (String)comm.action;
+          comm.cmdToEsp = "jobsend," + (String)barang.terhitung + "," + (String)comm.action + "\n";
           Serial.write(comm.cmdToEsp.c_str());
           if(barang.terhitung != 1){
             barang.prevStamp = barang.currentStamp;
