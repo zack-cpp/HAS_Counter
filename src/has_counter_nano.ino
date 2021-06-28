@@ -27,14 +27,21 @@ RTC_DS3231 rtc;
 struct Tag{
   String card;
   String prevCard;
+  String mtCard;
   String nama;
   bool tapState = false;
   bool tap = false;
 }tag;
 
 struct Time{
+  byte jam;
+  byte menit;
+  byte detik;
   byte millisecond;
   byte prevSecond;
+  byte mtJam[2];
+  byte mtMenit[2];
+  byte mtDetik[2];
   unsigned long RFdelay;
   unsigned long buzzTime;
 }waktu;
@@ -50,7 +57,7 @@ struct Barang{
 }barang;
 
 struct Comm{
-  String data[2];
+  String data[4];
   String cmdToEsp;
   byte jumlahData = 0;
   byte action = 4;
@@ -66,6 +73,7 @@ struct States{
   bool buzzState = false;
   const byte BUTTON[3] = {PIN_HOLD, PIN_SETUP, PIN_STOP};
   const byte LED[3] = {LED_HOLD, LED_SETUP, LED_STOP};
+  bool mtState = false;
 }bs;
 
 uint8_t blank[] = { 0x00, 0x00, 0x00, 0x00 };
@@ -94,7 +102,7 @@ bool readRFID();
 void(* resetFunc) (void) = 0;
 
 void setup(){
-	Serial.begin(115200);
+	Serial.begin(9600);
   rdm6300.begin(RDM6300_RX_PIN);
   if (! rtc.begin()) {
     Serial.println("Couldn't find RTC");
@@ -124,22 +132,58 @@ void setup(){
 	digitalWrite(READ_LED_PIN, LOW);
   waitForWiFi();
   tag.tap = false;
+  waktu.RFdelay = millis();
 }
 
 void loop(){
   DateTime now = rtc.now();
   String data;
-  if(millis() - waktu.RFdelay > 6000){
+  if(millis() - waktu.RFdelay > 1000){
     tag.tapState = true;
   }else{
     tag.tapState = false;
   }
   if(readRFID()){
     if(tag.tapState){
-      waktu.buzzTime = millis();
-      bs.buzzState = true;
-      comm.cmdToEsp = "TAG," + tag.card + "\n";
-      Serial.write(comm.cmdToEsp.c_str());
+      if(!bs.holdState && !bs.setupState && bs.stopState && bs.mtState){
+        digitalWrite(BUZZER, HIGH);
+        delay(100);
+        digitalWrite(BUZZER, LOW);
+        waktu.mtJam[0] = now.hour();
+        waktu.mtMenit[0] = now.minute();
+        waktu.mtDetik[0] = now.second();
+        bs.mtState = true;
+        lcd.clear();
+        lcd.setCursor(1,0);
+        lcd.print("Under Maintenance");
+        lcd.setCursor(2,1);
+        lcd.print("Start : ");
+        lcd.print((String)waktu.mtJam[0] + ":" + (String)waktu.mtMenit[0] + ":" + (String)waktu.mtDetik[0]);
+        lcd.setCursor(2,2);
+        lcd.print("Stop  : ");
+        while(true){
+          DateTime now2 = rtc.now();
+          if(readRFID()){
+            digitalWrite(BUZZER, HIGH);
+            delay(100);
+            digitalWrite(BUZZER, LOW);
+            waktu.mtJam[1] = now2.hour();
+            waktu.mtMenit[1] = now2.minute();
+            waktu.mtDetik[1] = now2.second();
+            lcd.print((String)waktu.mtJam[1] + ":" + (String)waktu.mtMenit[1] + ":" + (String)waktu.mtDetik[1]);
+            bs.mtState = false;
+            delay(1500);
+            lcd.clear();
+            waktu.RFdelay = millis();
+            break;
+          }
+        }
+      }else{
+        waktu.buzzTime = millis();
+        bs.buzzState = true;
+        comm.cmdToEsp = "TAG," + tag.card + "\n";
+        Serial.write(comm.cmdToEsp.c_str());
+      }
     }
   }
   if(bs.buzzState){
@@ -165,10 +209,6 @@ void loop(){
 
   for(byte i = 0; i < 3; i++){
     if(digitalRead(bs.BUTTON[i]) == LOW){
-      // pinMode(bs.LED[i], OUTPUT);
-      // digitalWrite(bs.LED[i], LOW);
-      // bs.prevState[i] = true;
-      // comm.sendActionState2 = true;
       if(!tag.tap){
         if(i == 0){
           if(!bs.setupState && !bs.stopState){
@@ -287,13 +327,51 @@ bool readRFID(){
   if (rdm6300.update()){
     waktu.RFdelay = millis();
     tag.card = String(rdm6300.get_tag_id(), HEX);
-    if(tag.card != tag.prevCard){
-      tag.prevCard = tag.card;
-      tag.tap = false;
+    //  if counter stop and wait for maintenance
+    if(!bs.holdState && !bs.setupState && bs.stopState){
+      if(tag.card != tag.prevCard){
+        if(rdm6300.is_tag_near()){
+          tag.mtCard = tag.card;
+          tag.card = tag.prevCard;
+          tag.tap = false;
+          bs.mtState = true;
+        }
+      }else{
+        return false;
+      }
     }else{
-      tag.tap = !tag.tap; 
+      if(tag.card != tag.prevCard && first){
+        if(rdm6300.is_tag_near()){
+          tag.prevCard = tag.card;
+          tag.tap = false;
+        }
+      }else{
+        if(tag.card == tag.prevCard){
+          if(rdm6300.is_tag_near()){
+            tag.tap = !tag.tap; 
+          }
+        }
+        else{
+          return false;
+        }
+      }
     }
-    return true;
+    // if(tag.card != tag.prevCard && first){
+    //   if(rdm6300.is_tag_near()){
+    //     tag.prevCard = tag.card;
+    //     tag.tap = false;
+    //   }
+    // }else{
+    //   if(tag.card == tag.prevCard){
+    //     if(rdm6300.is_tag_near()){
+    //       tag.tap = !tag.tap; 
+    //     }
+    //   }
+    //   else{
+    //     return false;
+    //   }
+    // }
+    // return true;
   }else{
     return false;
   }
@@ -302,33 +380,17 @@ bool readRFID(){
 void waitForWiFi(){
   unsigned long waitRFID;
   String data;
-  lcd.setCursor(6,1);
-  lcd.print("Tap RFID");
+
+  lcd.setCursor(4,0);
+  lcd.print("Counter v1.6");
+  lcd.setCursor(4,2);
+  lcd.print("Connecting to");
+  lcd.setCursor(8,3);
+  lcd.print("WiFi");
+  comm.cmdToEsp = "WIFI_CHECK\n";
+  Serial.write(comm.cmdToEsp.c_str());
   while(!readRFID()){
     readUART();
-    // while(Serial.available()){
-    //   char s = Serial.read();
-    //   data += s;
-    // }
-    // if(data != ""){
-    //   if(data == "AP_CONFIG"){
-    //     lcd.clear();
-    //     lcd.setCursor(2,0);
-    //     lcd.print("Please Configure");
-    //     lcd.setCursor(8,1);
-    //     lcd.print("WiFi");
-    //     lcd.setCursor(4,2);
-    //     lcd.print("192.168.4.1");
-    //     data = "";
-    //   }else if(data == "CONFIG_DONE"){
-    //     lcd.clear();
-    //     lcd.setCursor(6,1);
-    //     lcd.print("Tap RFID");
-    //     data = "";
-    //   }
-    // }else{
-      
-    // }
   }
   while(readRFID()){
 
@@ -342,7 +404,6 @@ void waitForWiFi(){
   lcd.print("Checking RFID");
   lcd.setCursor(8,2);
   lcd.print("....");
-  // data = tag.card + ",GET_IP";
   data = "GET_IP," + tag.card + "\n";
   Serial.write(data.c_str());
   waitRFID = millis();
@@ -424,14 +485,23 @@ void readUART(){
   String data;
   String data2;
   while(Serial.available()){
-    char s = Serial.read();
-    data += s;
+    data = Serial.readStringUntil('\n');
+    // char s = Serial.read();
+    // data += s;
   }
   if(data != ""){
     parsing(data);
     if(comm.jumlahData != 1){
-      barang.total = comm.data[0].toInt();
-      tag.nama = comm.data[1];
+      if(comm.data[0] == "TIME"){
+        DateTime now = rtc.now();
+        waktu.jam = comm.data[1].toInt();
+        waktu.menit = comm.data[2].toInt();
+        waktu.detik = comm.data[3].toInt();
+        rtc.adjust(DateTime(now.year(), now.month(), now.day(), waktu.jam, waktu.menit, waktu.detik));
+      }else{
+        barang.total = comm.data[0].toInt();
+        tag.nama = comm.data[1];
+      }
     }else{
       if(data == "AP_CONFIG"){
         lcd.clear();
@@ -467,6 +537,14 @@ void readUART(){
             }
           }
         }
+      }else if(data == "CONFIG_DONE" || data == "WL_CONNECTED"){
+        if(data == "WL_CONNECTED"){
+          comm.cmdToEsp = "TIME_GET\n";
+          Serial.write(comm.cmdToEsp.c_str());
+        }
+        lcd.clear();
+        lcd.setCursor(6, 1);
+        lcd.print("Tap RFID");
       }
     }
   }
