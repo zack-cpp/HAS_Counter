@@ -6,10 +6,10 @@
 #define RDM6300_RX_PIN 9
 #define READ_LED_PIN 13
 #define CLK 3
-#define DIO 2
+#define DIO 8
 #define CLK2  4
 #define DIO2  5
-#define IR  8
+#define IR  2
 #define BUZZER    A0
 #define PIN_HOLD  A1
 #define PIN_SETUP A2
@@ -44,6 +44,7 @@ struct Time{
   byte mtDetik[2];
   unsigned long RFdelay;
   unsigned long buzzTime;
+  unsigned long jobSendTime;
 }waktu;
 
 struct Barang{
@@ -63,6 +64,7 @@ struct Comm{
   byte action = 4;
   bool sendActionState = false;
   bool sendActionState2 = false;
+  bool jobSendState = false;
 }comm;
 
 struct States{
@@ -95,6 +97,7 @@ void waitForWiFi();
 void readUART();
 void parsing(String data);
 void showMenu(byte jam, byte menit, byte detik);
+void isr();
 unsigned int calculateCycle();
 unsigned int calculateMillisRTC(byte detik);
 
@@ -130,6 +133,7 @@ void setup(){
   pinMode(bs.LED[2], INPUT);
   pinMode(BUZZER, OUTPUT);
 	digitalWrite(READ_LED_PIN, LOW);
+  attachInterrupt(digitalPinToInterrupt(2), isr, FALLING);
   waitForWiFi();
   tag.tap = false;
   waktu.RFdelay = millis();
@@ -201,11 +205,11 @@ void loop(){
   //  read incoming serial data
   readUART();
   //  read proximity
-  if(digitalRead(IR) == LOW){
-    countState = true;
-  }else if(digitalRead(IR) == HIGH){
-    countState = false;
-  }
+  // if(digitalRead(IR) == LOW){
+  //   countState = true;
+  // }else if(digitalRead(IR) == HIGH){
+  //   countState = false;
+  // }
 
   for(byte i = 0; i < 3; i++){
     if(digitalRead(bs.BUTTON[i]) == LOW){
@@ -282,7 +286,7 @@ void loop(){
     //  reset cycle to 0
     barang.cycleTime = 0;
   }else{
-    barang.cycleTime = calculateCycle();
+    // barang.cycleTime = calculateCycle();
     if(barang.terhitung == 0){
       barang.cycleTime = 0;
     }
@@ -303,6 +307,15 @@ void loop(){
     display2.showNumberDec(barang.total, false);
     display.showNumberDec(barang.terhitung, false);
     barang.resetState = false;
+    if(comm.jobSendState && stateCounter){
+      // if(millis() - waktu.jobSendTime >= 100){
+        // waktu.jobSendTime = millis();
+        comm.action = 1;
+        comm.cmdToEsp = "jobsend," + (String)barang.terhitung + "," + (String)comm.action + "\n";
+        Serial.write(comm.cmdToEsp.c_str());
+        comm.jobSendState = false;
+      // }
+    }
   }
   //  RFID interrupt handler
   if(tag.tap){
@@ -321,6 +334,37 @@ void loop(){
   }
   //  display to LCD
   showMenu(now.hour(), now.minute(), now.second());
+}
+
+void isr(){
+  unsigned int hasil;
+  if(!tag.tap && digitalRead(IR) == LOW){
+    if(stateCounter){
+      barang.terhitung++;
+      comm.jobSendState = true;
+      // comm.action = 1;
+      // comm.cmdToEsp = "jobsend," + (String)barang.terhitung + "," + (String)comm.action + "\n";
+      // Serial.write(comm.cmdToEsp.c_str());
+      if(barang.terhitung != 1){
+        barang.prevStamp = barang.currentStamp;
+        barang.currentStamp = millis();
+        hasil = barang.currentStamp - barang.prevStamp;
+        barang.cycleTime = hasil;
+      }else{
+        barang.currentStamp = millis();
+        barang.cycleTime = 0;
+      }
+    }
+  }
+  if(comm.jobSendState){
+    if(millis() - waktu.jobSendTime >= 100){
+      waktu.jobSendTime = millis();
+      comm.action = 1;
+      comm.cmdToEsp = "jobsend," + (String)barang.terhitung + "," + (String)comm.action + "\n";
+      Serial.write(comm.cmdToEsp.c_str());
+      comm.jobSendState = false;
+    }
+  }
 }
 
 bool readRFID(){
@@ -554,7 +598,7 @@ unsigned int calculateCycle(){
   unsigned int hasil;
   if(!tag.tap){
     if(countState != countPrevState){
-      countPrevState = countState;    
+      countPrevState = countState;
       if(countState){
         if(stateCounter){
           barang.terhitung++;
